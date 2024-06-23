@@ -238,3 +238,126 @@ fixed4 frag(src_frag src):SV_Target {
 }
 ENDCG
 ```
+### 高光反射(Blinn光照模型)
+> 跟摄像机相关，是光照射到顶点之后反射到摄像机的效果
+#### 思路
+> 出射角由入射向量和顶点法线向量得到，点乘顶点到摄像机的向量可得夹角cos值，夹角越小，效果越强
+#### 代码
+```
+CGPROGRAM
+#include "Lighting.cginc"
+#pragma vertex vert
+#pragma fragment frag
+struct src_vert{
+    float4 pos:POSITION;
+    float4 normal:NORMAL;
+};
+struct src_frag{
+    float4 sv_pos:SV_POSITION;
+    float3 temp:COLOR;
+};
+fixed4 _Color;
+float _Specular;
+src_frag vert(src_vert src){
+    src_frag dst;
+    dst.sv_pos=UnityObjectToClipPos(src.pos);
+    fixed3 ambient_light = UNITY_LIGHTMODEL_AMBIENT.rgb;
+    fixed3 light_vector = normalize(_WorldSpaceLightPos0.xyz);
+    fixed3 p_world_normal = normalize(mul(src.normal,(float3x3)unity_WorldToObject));
+    fixed3 diffuse_rate = _LightColor0*max(dot(light_vector,p_world_normal),0)*_Color.rgb;
+    
+    fixed3 reflect_vector = normalize(reflect(-light_vector,p_world_normal));//计算出射角向量
+    fixed3 dot_to_camera = normalize(_WorldSpaceCameraPos.xyz-mul(src.pos,(float3x3)unity_WorldToObject));//计算顶点到相机的向量
+    fixed3 specular_rate = _LightColor0*pow(max(dot(reflect_vector,dot_to_camera),0),_Specular);//计算高光增益
+    dst.temp=diffuse_rate+ambient_light+specular_rate;
+    return dst;
+}
+fixed4 frag(src_frag src):SV_Target {
+    return fixed4(src.temp,1);
+}
+ENDCG
+```
+### 逐像素高光反射
+> 效果比顶点函数的好
+
+> 就是cv代码到片元函数中
+#### 代码
+```
+CGPROGRAM
+#include "Lighting.cginc"
+#pragma vertex vert
+#pragma fragment frag
+struct src_vert{
+    float4 pos:POSITION;
+    float4 normal:NORMAL;
+};
+struct src_frag{
+    float4 sv_pos:SV_POSITION;
+    float3 world_normal:TEXCOORD0;
+    float3 world_camera:TEXCOORD1;
+};
+fixed4 _Color;
+float _Specular;
+src_frag vert(src_vert src){
+    src_frag dst;
+    dst.sv_pos=UnityObjectToClipPos(src.pos);
+    dst.world_normal = normalize(mul(src.normal,(float3x3)unity_WorldToObject));
+    dst.world_camera = normalize(_WorldSpaceCameraPos.xyz-mul(unity_ObjectToWorld,src.pos).xyz);
+    return dst;
+}
+fixed4 frag(src_frag src):SV_Target {
+fixed3 ambient_light = UNITY_LIGHTMODEL_AMBIENT.rgb;
+    fixed3 light_vector = normalize(_WorldSpaceLightPos0.xyz);
+    
+    fixed3 diffuse_rate = _LightColor0*max(dot(light_vector,src.world_normal),0)*_Color.rgb;
+    
+    fixed3 reflect_vector = normalize(reflect(-light_vector,src.world_normal));
+    
+    fixed3 specular_rate = _LightColor0*pow(max(dot(reflect_vector,src.world_camera),0),_Specular);
+    fixed3 res =diffuse_rate+ambient_light+specular_rate;
+    return fixed4(res,1);
+}
+ENDCG
+```
+### Blinn-Phong光照模型
+> 原版是反射光和视野方向的夹角,这个版本是法线和x的夹角
+
+> x为入射光和视野向量的平分线向量
+#### 代码
+```
+CGPROGRAM
+#include "Lighting.cginc"
+#pragma vertex vert
+#pragma fragment frag
+struct src_vert{
+    float4 pos:POSITION;
+    float4 normal:NORMAL;
+};
+struct src_frag{
+    float4 sv_pos:SV_POSITION;
+    float3 world_normal:TEXCOORD0;
+    float3 world_camera:TEXCOORD1;
+};
+fixed4 _Color;
+float _Specular;
+src_frag vert(src_vert src){
+    src_frag dst;
+    dst.sv_pos=UnityObjectToClipPos(src.pos);
+    dst.world_normal = normalize(mul(src.normal,(float3x3)unity_WorldToObject));
+    dst.world_camera = normalize(_WorldSpaceCameraPos.xyz-mul(unity_ObjectToWorld,src.pos).xyz);
+    return dst;
+}
+fixed4 frag(src_frag src):SV_Target {
+fixed3 ambient_light = UNITY_LIGHTMODEL_AMBIENT.rgb;
+    fixed3 light_vector = normalize(_WorldSpaceLightPos0.xyz);
+    
+    fixed3 diffuse_rate = _LightColor0*max(dot(light_vector,src.world_normal),0)*_Color.rgb;
+    
+    //fixed3 reflect_vector = normalize(reflect(-light_vector,src.world_normal));
+    float3 helf_line=normalize(light_vector+src.world_camera);
+    fixed3 specular_rate = _LightColor0*pow(max(dot(src.world_normal,helf_line),0),_Specular);
+    fixed3 res =diffuse_rate+ambient_light+specular_rate;
+    return fixed4(res,1);
+}
+ENDCG
+```
